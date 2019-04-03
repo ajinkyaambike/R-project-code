@@ -1,0 +1,169 @@
+library(shiny)
+library(dplyr)
+library(tidyr)
+library(shinyWidgets)
+library(leaflet)
+library(lubridate)
+library(htmltools)
+library(plotly)
+
+getwd()
+crimes_data  <- read.csv("Crimes2018.csv")
+
+crimes_data <- na.omit(crimes_data)
+
+n = 1 
+crimes_data = cbind(crimes_data, replicate(n,crimes_data$Date)) 
+colnames(crimes_data)[23] <- "Replicate.Date"
+
+crimes_data <- tidyr::separate(data=crimes_data,
+                               col= Date,
+                               into=c("Month", "Exact_date"),
+                               sep="/",
+                               remove=FALSE)
+
+crimes_data$Month[crimes_data$Month == "01"] <- "January"
+crimes_data$Month[crimes_data$Month == "02"] <- "February"
+crimes_data$Month[crimes_data$Month == "03"] <- "March"
+crimes_data$Month[crimes_data$Month == "04"] <- "April"
+crimes_data$Month[crimes_data$Month == "05"] <- "May"
+crimes_data$Month[crimes_data$Month == "06"] <- "June"
+crimes_data$Month[crimes_data$Month == "07"] <- "July"
+crimes_data$Month[crimes_data$Month == "08"] <- "August"
+crimes_data$Month[crimes_data$Month == "09"] <- "September"
+crimes_data$Month[crimes_data$Month == "10"] <- "October"
+crimes_data$Month[crimes_data$Month == "11"] <- "November"
+crimes_data$Month[crimes_data$Month == "12"] <- "December"
+
+crimes_data$Newtime<-as.POSIXct(crimes_data$Replicate.Date, format="%m/%d/%Y %I:%M:%S %p", tz="UTC")
+crimes_data$New.Format<- format(as.POSIXct(crimes_data$Newtime,format="%m/%d/%Y %H:%M:%S"),'%H')
+
+
+
+crimes_data$Date = as.Date(crimes_data$Date,format = "%m/%d/%Y")
+
+str(crimes_data)
+
+count <- as.data.frame(table(crimes_data$Month,crimes_data$Primary.Type))
+count
+count2<-data.frame(table(crimes_data$New.Format, crimes_data$Primary.Type))
+count2$Var1<- as.numeric(count2$Var1)
+
+#############################---Shiny----##########################################
+
+ui <- shinyUI(fluidPage(
+  
+  navbarPage(title = "Assignment 2",
+              
+              tabPanel(title = "Barplot",
+                       sidebarLayout(
+                         sidebarPanel (
+                             selectInput(inputId = "crimetype",
+                                         label = "Select the crime type",
+                                         choices = unique(crimes_data$Primary.Type), selected = "BATTERY" , multiple = TRUE),
+                             
+                             selectInput(inputId = "month",
+                                         label = "Select the month",
+                                         choices = unique(crimes_data$Month), selected = "January",  multiple = TRUE)
+                             ),
+                mainPanel(
+                           h4("Total Crime in each months"),
+                           plotlyOutput(outputId = "barplot")
+                           )
+                         )),
+
+            tabPanel(title = "Map",
+                           sidebarLayout(
+                             sidebarPanel(
+                                          dateRangeInput(inputId = "daterange", label = "Filter Accidents by Date",
+                                              start = as.Date('2018-01-01'), end = as.Date('2018-01-01'))
+                               ),
+
+            mainPanel(
+                  h4("Location of crimes by date"),
+                  leafletOutput("mymaps", height = "700")
+                  )
+                  )),
+
+
+
+              tabPanel(title = "HeatMap",
+                       sidebarLayout(
+                         sidebarPanel(
+
+                         ),
+                         mainPanel(
+                           h4("Location of crimes by date"),
+                           plotOutput("heatmap",height = "600")
+                      )
+                      ))
+
+)            
+)
+)
+pal <- colorFactor(palette = c("#c41515","#c44f15","#c46f15","#d8c602","#91d802","#5fd802","#00330a",
+                               "#10c985","#004949","#002149","#6073ff","#ffef60","#ffe500","#c68d91","#ff4c59","#c9000e","#ff00bb","#ffc6cd","#6ec9b2","#894329","#ff8456","#260a00",
+                               "#564c48","#e2ff7a","#778e23","#5c7500","#a5fffa",
+                               "#684564","#bccdff","#5bff63","#aaff2b","#e7a8ff"),
+                   levels = c("ARSON","ASSAULT","BATTERY","BURGLARY","CONCEALED CARRY LICENSE VIOLATION","CRIM SEXUAL ASSAULT","CRIMINAL DAMAGE"
+                              ,"CRIMINAL TRESPASS","DECEPTIVE PRACTICE","GAMBLING","HOMICIDE","HUMAN TRAFFICKING","INTERFERENCE WITH PUBLIC OFFICER","INTIMIDATION","KIDNAPPING","LIQUOR LAW VIOLATION",
+                              "MOTOR VEHICLE THEFT","NARCOTICS","NON-CRIMINAL","NON-CRIMINAL (SUBJECT SPECIFIED)","OBSCENITY","OFFENSE INVOLVING CHILDREN","OTHER NARCOTIC VIOLATION","OTHER OFFENSE","PROSTITUTION","PUBLIC INDECENCY","PUBLIC PEACE VIOLATION",
+                              "ROBBERY","SEX OFFENSE","STALKING","THEFT","WEAPONS VIOLATION"))
+
+
+server <- function(input,output){
+
+ 
+  filtered_data_plot <- reactive({
+    count[count$Var2 %in% input$crimetype & count$Var1 %in% input$month,]
+  })
+  
+  
+  output$barplot <- renderPlotly({
+    
+    ggplot(data = filtered_data_plot(),aes(x=filtered_data_plot()$Var1, y = filtered_data_plot()$Freq,fill = filtered_data_plot()$Var2))+
+      theme(axis.text.x =
+              element_text(size  = 10,
+                           angle = 45,
+                           hjust = 1,
+                           vjust = 1)) + geom_bar(stat = "identity") + labs(x = "Months",y = "Frequency")
+  })
+  
+  
+  filtered_data <- reactive({
+    out <- crimes_data
+    out <- out %>%
+      filter(Date >= input$daterange[1] & Date <= input$daterange[2])
+
+  })
+  
+
+  output$mymaps <- renderLeaflet({
+    df <- filtered_data()
+    m <- leaflet(data = df ) %>%
+      addTiles() %>%
+      addCircleMarkers(lng = ~Longitude,
+                 lat = ~Latitude,radius = 2,color = ~pal(Primary.Type),
+                 label = paste("Crime Type:",df$Primary.Type)) %>%
+      addLegend(pal = pal,
+                values = c("ARSON","ASSAULT","BATTERY","BURGLARY","CONCEALED CARRY LICENSE VIOLATION","CRIM SEXUAL ASSAULT","CRIMINAL DAMAGE"
+                                    ,"CRIMINAL TRESPASS","DECEPTIVE PRACTICE","GAMBLING","HOMICIDE","HUMAN TRAFFICKING","INTERFERENCE WITH PUBLIC OFFICER","INTIMIDATION","KIDNAPPING","LIQUOR LAW VIOLATION",
+                                    "MOTOR VEHICLE THEFT","NARCOTICS","NON-CRIMINAL","NON-CRIMINAL (SUBJECT SPECIFIED)","OBSCENITY","OFFENSE INVOLVING CHILDREN","OTHER NARCOTIC VIOLATION","OTHER OFFENSE","PROSTITUTION","PUBLIC INDECENCY","PUBLIC PEACE VIOLATION",
+                                    "ROBBERY","SEX OFFENSE","STALKING","THEFT","WEAPONS VIOLATION"),
+    
+                opacity = 0.75,
+                title = "Crime Type",
+                position = "topright")
+
+
+  })
+output$heatmap <- renderPlot({
+    
+    
+    ggplot(count2, aes(x = count2$Var1, y = count2$Var2)) + geom_tile(aes(fill = count2$Freq))+scale_fill_gradient(name = "Total Crimes", low = "yellow",high = "red")+
+      ggtitle("Heatmap for Type of Crime and Hour of Day") + labs(x="Hour",y="Crime type")
+
+  })
+}
+
+shinyApp(ui = ui, server = server)
