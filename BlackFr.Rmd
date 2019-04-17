@@ -1,0 +1,559 @@
+---
+title: "Analysis Of Black Friday"
+author: "Ajinkya Ambike"
+date: "April 16, 2019"
+output: 
+  pdf_document: 
+    toc: yes
+---
+
+## Summary : 
+In this project I am trying to do some analytics on the Black friday dataset taken from kaggle website.The dataset has 537577 observations and 12 variables.My aim is to do some analytics using Product Categories and showcase some probabilities of purchasing a product from a particular category.
+
+## Objective :
+To predict the probalities of users who purchased items from among which categories using Multinomial logistic regression.Also i am using aproiri algorithm to show the market basket analysis of the Product categories.I have also show some of the EDA to better understand the data and derive some conclusions from it and provide some suggestions for the seller.
+
+## Background:
+For centuries, the adjective "black" has been applied to days upon which calamities occurred. Many events have been described as "Black Friday", although the most significant such event in American History was the Panic of 1869, which occurred when financiers Jay Gould and James Fisk took advantage of their connections with the Grant Administration in an attempt to corner the gold market. When President Grant learned of this manipulation, he ordered the Treasury to release a large supply of gold, which halted the run and caused prices to drop by eighteen percent. Fortunes were made and lost in a single day, and the president's own brother-in-law, Abel Corbin, was ruined.
+The earliest known use of "Black Friday" to refer to the day after Thanksgiving occurs in the journal, Factory Management and Maintenance, for November 1951, and again in 1952. Here it referred to the practice of workers calling in sick on the day after Thanksgiving, in order to have a four-day weekend.
+Black Friday is a shopping day for a combination of reasons. As the first day after the last major holiday before Christmas, it marks the unofficial beginning of the Christmas shopping season. Additionally, many employers give their employees the day off as part of the Thanksgiving holiday weekend. In order to take advantage of this, virtually all retailers in the country, big and small, offer various sales including limited amounts of doorbuster/doorcrasher/doorsmasher items to entice traffic. The early 2010s have seen retailers extend beyond normal hours in order to maintain an edge or to simply keep up with the competition. Such hours may include opening as early as 12:00 am or remaining open overnight on Thanksgiving Day and beginning sale prices at midnight.
+
+## Data Description:
+We have the following columns in the description.
+User_ID                   : Integer variable with the id of each user.
+Product_ID                : Factor variable as the idea of each product.
+Gender                    : Factor variable which contains the gender of all the users.
+Age                       : Factor variable which contains the age interval of all the users.
+Occupation                : Integer Variable which contains the integer value of all the occupation.
+City_Category             : Factor variable which contains the Factor levels of 3 city categories that is A,B,C.
+Stay_In_Current_City_Years: Categorical variable which contains the number of years a person lives in the city.
+Marital_Status            : Categorical variable which contains the information of all the users whether he is                                married or not.
+Product_Category_1        : Categorical variable Product category 1 in which we have the various product                                      categories. 
+Product_Category_2        : Categorical variable Product category 2 in which we have the various product                                      categories. 
+Product_Category_3        : Categorical variable Product category 3 in which we have the various product                                      categories. 
+Purchase                  : Integer variable which gives total Purchase by each user. 
+
+## Taking input in R:
+I have installed few libraries here in this chunk.I have also imported the data file using read.csv.After viewing the data I realized that there are multiple null values in this datafile.So using na.omit I removed all the null values and finally we are left with 164278 observations.If we find the structure of the dataset we find that there are 3 product categories which are factor variables along with Gender,Age and City_Category are also factor variables.Only occupation,Stay_in_current_years and purchase are integer variables.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggrepel)
+library(lubridate)
+library(scales)
+library(highcharter)
+library(ggpubr)
+library(ggplot2)
+library(nnet)
+library(dplyr)
+library(tidyr)
+library(tinytex)
+library(arules)
+library(recommenderlab)
+library(MASS)
+library(caret)
+
+black <- read.csv("BlackFriday.csv")
+
+blackwithoutna <- na.omit(black)
+blackwithoutna$Marital_Status <- as.factor(blackwithoutna$Marital_Status)
+blackwithoutna$Product_Category_1 <- as.factor(blackwithoutna$Product_Category_1)
+blackwithoutna$Product_Category_2 <- as.factor(blackwithoutna$Product_Category_2)
+blackwithoutna$Product_Category_3 <- as.factor(blackwithoutna$Product_Category_3)
+
+str(blackwithoutna)
+
+```
+
+
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+
+```
+
+* Purchase by males and Females.
+
+```{r }
+ggplot(blackwithoutna, aes(x=Marital_Status, y=Purchase))+ geom_boxplot()+facet_grid(~Gender)
+```
+
+We find that Males who are married has higher sales than married females.The purchase for the males is around 13000 for both married and unmarried males.
+
+
+* City Category Versus Purchase.
+
+```{r }
+ggplot(blackwithoutna, aes(x=City_Category, y=Purchase))+ geom_boxplot()+facet_grid(~Gender)
+
+
+```
+Males and females in city category C has the highest sales compared to other city categories.The sale is more than 11000.
+
+## Exploratory Data Analysis.
+Exploratory Data Analysis refers to the critical process of performing initial investigations on data so as to discover patterns,to spot anomalies,to test hypothesis and to check assumptions with the help of summary statistics and graphical representations.
+It is the first step in your data analysis process. Here, we make sense of the data you have and then figure out what questions we want to ask and how to frame them, as well as how best to manipulate our available data sources to get the answers we need.
+
+* City Category compared with different variables.
+```{r }
+customer_count_per_city <- blackwithoutna %>%  
+  group_by(User_ID) %>%
+  filter(row_number(User_ID) == 1) %>%
+  group_by(City_Category, Age) %>%
+  summarise(customers_count = n()) %>%
+  arrange(City_Category, Age)
+
+citySales2 <- blackwithoutna %>%
+  group_by(City_Category)%>%
+  summarise(sold_by_city = n(), 
+            percentage_by_city = round(n()/nrow(blackwithoutna)*100,0))
+
+ggarrange(
+  customer_count_per_city %>%
+    ggplot(aes(x = City_Category, y = customers_count, fill = Age)) +
+    geom_bar(stat = "identity", position = position_dodge()) +
+    ggtitle("Number of customers across cities"),
+  
+  blackwithoutna %>%
+    group_by(User_ID, City_Category, Age) %>%
+    summarise(bought_items = n()) %>%
+    group_by(City_Category, Age) %>%
+    summarise(items_bought_per_city = sum(bought_items)) %>%
+    arrange(City_Category, Age) %>%
+    cbind(customers_count = customer_count_per_city$customers_count) %>%
+    mutate(average_items_per_person_in_city = items_bought_per_city/customers_count) %>%
+    ggplot(aes(x = City_Category, y = average_items_per_person_in_city, fill = Age)) +
+    geom_bar(stat = "identity", position = position_dodge()) +
+    ggtitle("Average number of bought items across cities"),
+  
+  blackwithoutna %>%
+    group_by(City_Category, Age) %>%
+    summarise(sales = n()) %>%
+    left_join(citySales2, by = "City_Category") %>%
+    mutate(percentage = round(sales/sold_by_city*100, 0),
+           percentage = ifelse(percentage < 3, "", as.character(paste0(percentage, "%")))) %>%
+    #select(-percentage_by_city) %>%
+    ggplot(aes(x = City_Category, y = sales, fill = Age)) +
+    geom_bar(stat="identity", position = position_dodge()) +
+    ggtitle("Number of sales across age groups in the three cities"),
+  
+  blackwithoutna %>%
+    group_by(City_Category) %>%
+    summarise(sales = n(), 
+              percentage_by_city = paste0(round(n()/nrow(blackwithoutna)*100,0), "%")) %>%
+    ggplot(aes(x = City_Category, y = sales)) +
+    geom_bar(stat="identity", fill = "royalblue") +
+    geom_text(aes(label = percentage_by_city),
+              vjust=1.6, 
+              color="white",
+              size=8) +
+    ggtitle("Number of sales in the three cities"),
+  nrow = 2, ncol = 2, common.legend = TRUE)
+```
+In the above graph we have shown four different quadrants.In 1st quadrant on top right,I have shown the items brought by different age groups accross city categories.In city categoryA,B and C we find that age group between 26-35 has the highest items bought.In 2nd quadrant top right we find that customers with 26-35 has highest customers count for all the 3 city categories.In 3rd quadrant we find the maximum sales for the age groups 26-35 for all the city categories.And finally in 4th Quandrant we have maximum sales by city category B.
+
+* Now we will see the age distribution by males and females.
+
+```{r }
+g <- ggplot(blackwithoutna, aes(Age))
+g + geom_bar(aes(fill = Gender)) + ggtitle("Gender which has maximum sales by age")
+
+```
+Again here in the above graph we find that the people between age groups 26-35 has maximum sales.And we have more males than females who purchased in that age group.
+
+* Lets See Gender across city categories. 
+```{r }
+ggplot(blackwithoutna, aes(x=Gender, y=Purchase,fill=Gender))+geom_boxplot()+stat_summary(fun.y = "mean", geom = "point", shape= 23, size= 2, fill= "white") +
+   ggtitle("Purchase Distribution by Gender across City Category")+facet_wrap(~City_Category ,ncol=3)
+```
+
+In the above boxplot,we find males from city category C has maximum purchase which again approximately 13000.
+
+* Now lets see the product categories which has maximum purchase.
+
+
+```{r }
+plot <- ggplot(data = blackwithoutna, aes(x=Product_Category_1, y=Purchase, fill=Product_Category_1)) +xlab("Product_Category_1") + ylab(" Purchase") +
+  ggtitle("Product Category Popularity Across City Categories") +
+  theme_bw()
+     plot + geom_bar(stat="identity") + facet_wrap(~City_Category,scales="free_y")
+
+     
+plot2 <- ggplot(data = blackwithoutna, aes(x=Product_Category_2, y=Purchase, fill=Product_Category_2)) +xlab("Product_Category_2") + ylab(" Purchase") +
+  ggtitle("Product Category Popularity Across City Categories") +
+  theme_bw()
+     plot2 + geom_bar(stat="identity") + facet_wrap(~City_Category,scales="free_y")
+     
+     
+plot3 <- ggplot(data = blackwithoutna, aes(x=Product_Category_3, y=Purchase, fill=Product_Category_3)) +xlab("Product_Category_3") + ylab(" Purchase") +
+  ggtitle("Product Category Popularity Across City Categories") +
+  theme_bw()
+     plot3 + geom_bar(stat="identity") + facet_wrap(~City_Category,scales="free_y")
+
+```
+
+
+In the above 3 plots,we find the purchase by each product categories in each city categories.In city category A,B and C we find for product category 1 that category 1 has the highest purchase over all the 3 city categories.
+
+In product category 2 ,we find that category 2 has maximum purchase in all the 3 city categories followed by category 8.
+
+In product category 3 ,we can see that the category number 17 has maximum purchase in all the 3 city categories followed by product category number 5.
+
+* Now let us execute the stay in current city of each user by city category.
+
+```{r }
+customers_stay <- blackwithoutna %>%
+                    dplyr::select(User_ID, City_Category, Stay_In_Current_City_Years) %>%
+                    group_by(User_ID) %>%
+                    distinct()
+
+
+residence <- customers_stay %>%
+                group_by(City_Category) %>%
+                tally()
+
+
+customers_stay_vis <- ggplot(data = customers_stay, aes(x = Stay_In_Current_City_Years, y = ..count.., fill = Stay_In_Current_City_Years)) +
+                              geom_bar(stat = 'count') +
+                              scale_fill_brewer(palette = 15) +
+                              labs(title = 'Customers Stay in Current City', y = 'Count', x = 'Stay in Current City', fill = 'Number of Years in Current City')
+
+
+stay_cities <- customers_stay %>%
+                group_by(City_Category, Stay_In_Current_City_Years) %>%
+                tally() %>%
+                mutate(Percentage = (n/sum(n))*100)
+
+ggplot(data = stay_cities, aes(x = City_Category, y = n, fill = Stay_In_Current_City_Years)) + 
+    geom_bar(stat = "identity", color = 'white') + 
+    scale_fill_brewer(palette = 17) + 
+    labs(title = "City Category + Stay in Current City", 
+            y = "Total Count (Years)", 
+            x = "City", 
+            fill = "Stay Years")
+```
+
+In this city category we find that maximum users stay just for 1 year in city A,B and C and it is followed by the duration of stay for 2 years.
+
+* Stay in The city by each age group
+
+```{r }
+
+blackwithoutna %>%  
+  group_by(User_ID) %>%
+  filter(row_number(User_ID) == 1) %>%
+  group_by(Age, Stay_In_Current_City_Years, City_Category) %>%
+  summarise(customer_count = n()) %>%
+  ggplot(aes(Age, customer_count, fill = Stay_In_Current_City_Years)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(City_Category~.) +
+  theme(axis.text.x.bottom = element_text(angle = 90))
+```
+We can see that within each age group for all the 3 city categories maximum number of people stay in a particular city is 1 year.Majority of the people prefer to leave the city and transfer to new city after an year.
+
+* Now let us see the purchase amount by the occupation.
+
+```{r }
+customers_total_purchase_amount <- blackwithoutna %>%
+                                    group_by(User_ID) %>%
+                                    summarise(Purchase_Amount = sum(Purchase))
+
+
+customers_total_purchase_amount <- arrange(customers_total_purchase_amount, desc((Purchase_Amount)))
+
+
+customers_Occupation <- blackwithoutna %>% dplyr::select(User_ID,Occupation) %>%
+                          group_by(User_ID) %>%
+                          distinct() %>%
+                          left_join(customers_total_purchase_amount, Occupation, by = 'User_ID')
+
+totalPurchases_Occupation <- customers_Occupation %>%
+                              group_by(Occupation) %>%
+                              summarise(Purchase_Amount = sum(Purchase_Amount)) %>%
+                              arrange(desc(Purchase_Amount))
+
+totalPurchases_Occupation$Occupation = as.character(totalPurchases_Occupation$Occupation)
+typeof(totalPurchases_Occupation$Occupation)
+
+occupation = ggplot(data = totalPurchases_Occupation) +
+                  geom_bar(mapping = aes(x = reorder(Occupation, -Purchase_Amount), y = Purchase_Amount, fill = Occupation), stat = 'identity') +
+                  scale_x_discrete(name="Occupation", breaks = seq(0,20, by = 1), expand = c(0,0)) +
+                  scale_y_continuous(name="Purchase Amount ($)", expand = c(0,0), limits = c(0, 750000000)) +
+                  labs(title = 'Total Purchase Amount by Occupation') + 
+                  theme(legend.position="none")
+
+print(occupation)
+
+```
+
+We can see from the barplot above that the occupation with id 4 has maximum purchase of the products followed by the occupation with id 0.
+
+## Linear Discriminant Analysis(LDA)
+
+As far as logistic regression is concerned,when classes are separated,parameters estimate from logistic regression tend to be unstable.Also it is not the best model if we have more than 2 classes.And therefore we use linear Discriminant Analysis.We can use LDA if we have more than 2 classes.Logistic regression does not create plots thats where the LDA comes to our rescue.It generates helpful plots,especially territorial maps for our data analysis.LDA is closely related to PCA and factor analysis,in both they look for linear combination of variables which best explains the data.LDA explicitly attemts to model the difference between the classes of data which is not done by PCA.
+
+How does Linear Discriminant Analysis work?
+The goal of Linear Discriminant Analysis is to project the features in higher dimension space onto a lower dimensional space.
+This can be achieved in three steps:
+The first step is to calculate the separability between different classes (i.e. the distance between the mean of different classes) also called as between-class variance
+Second Step is to calculate the distance between the mean and sample of each class, which is called the within class variance.
+The third step is to construct the lower dimensional space which maximizes the between class variance and minimizes the within class variance. Let P be the lower dimensional space projection, which is called Fisher's criterion.
+![LDA](C:\Users\ajink\Desktop\Linear-discriminant-analysis)
+
+In the code below we perform LDA on the City_Category variable.
+```{r }
+training.index <- createDataPartition(blackwithoutna$City_Category , p = 0.8 , list = FALSE)
+train.df <- blackwithoutna[training.index, ]
+valid.df <- blackwithoutna[-training.index, ]
+
+norm.values  <- preProcess(train.df, method = c("center", "scale"))
+train.norm <- predict(norm.values, train.df)
+valid.norm <- predict(norm.values, valid.df)
+
+lda3 <- lda(City_Category ~  Purchase + Occupation + Age + Stay_In_Current_City_Years , data = train.norm)
+lda3
+
+pred <- predict(lda3,train.norm)
+
+lda3.plot <- cbind(train.norm, predict(lda3)$x)
+ggplot(lda3.plot, aes(LD1,LD2)) +
+  geom_point(aes(color = City_Category))
+
+pred3 <- predict(lda3, valid.norm)
+names(pred3)
+
+# check model accuracy
+table(pred3$class, valid.norm$City_Category) 
+mean(pred3$class == valid.norm$City_Category)  
+
+```
+First of all,we generally dont run any algorithm on the entire dataset.Therefore we divide the dataset into two parts:training and validation.We do this by using createDataPartition funtion in caret package.Then we normalize the dataset using preprocess function.
+When I execute LDA we get information about the prior probabilities of each category.For example we find that for city category A the prior probability is 0.2486 which means that 24.86% of the data can be categorized in city category A.41.5% of the data can be categorized in city category B and Similarly last 33.6% of the data can be categorized to be in city category C.
+We get the information of LD1 and LD2.These coefficients of linear discriminants can help us to predict the classification boundary.The boundary values can be calculated by multiplying the LD values with the variables.For example we can multiply 0.4253 with Purchase ,0.1670 with Occupation and similarly with all the other variables we find the boundary values and we can classify it based on city categories.
+We also get to know the proortion of trace.This information help us to know that 87.8% of the data is stored in LD1 while the remaining 12.2% of the data is stored in LD2.
+We also determine the accuracy of the model.The model is only 43.13% accurate and therefore we can see that this model has not that good accuracy and which shows that we cannot make much accurate prediction using this model.
+
+## Multinomial Logistic Regression.
+
+First let us see what is Multinomial Logistic regression.
+Multinomial logistic regression is a classification method that generalises logistic regressions to multiclass problems that is with more than two discrete possible outcomes.Multinomial logistic regression is chosen when the dependent variable is nominal and for which there are more than two categories.For example,the major a student will choose,blood type of a person,the name of the countries etc.
+
+```{r }
+blackwithoutna$Product_Category_1factor <- as.factor(blackwithoutna$Product_Category_1)
+blackwithoutna$out <- relevel(blackwithoutna$Product_Category_1factor , ref = "1")
+model_multinom <- multinom(out ~ Occupation+Marital_Status+Purchase,data = blackwithoutna)
+summary(model_multinom)
+predictmodel <- predict(model_multinom,blackwithoutna,type="prob")
+head(predictmodel, 10)
+cm <- table(predict(model_multinom),blackwithoutna$Product_Category_1factor)
+print(cm)
+
+sum(diag(cm))/sum(cm)
+
+z <- summary(model_multinom)$coefficients/summary(model_multinom)$standard.errors
+p <- (1 - pnorm(abs(z),0,1)) * 2
+p
+```
+
+So,in this code we have used product_category_1 column and we are keeping 1 as the reference category.We are running this model with occupation,Marital_status and purchase as independent variables.
+Ones I run the multinomial logit,we find that it generates the errors and with each iteration it reduces the value of the error and finally it converged with the value 195440.522682
+
+When I execute the summary of the model,we get how each independent variable has an effect on each categories.For example for category 2 we see that the occupation negatively affects the category which means people from one particular occupation are less likely to purchase from product category 2.Similarly Marital_status has positive influence on category 2.We can give similar explanation for all the other categories.
+
+When I execute the predictmodel we get the probabilities for all the users purchase from any of the category.For example for user 2 the probability of his purchase from category 1 is 0.7648,for category 2 its 0.0897 and for category 3 its 0.05011.We find that out of all the probability of categories for user2 the maximum probability is for purchase of category 1 which is 0.7648 which shows that there is highest chance of user2 to purchase from category 1.Similarly we can find for all the users.
+
+When I find the accuracy it is around 60%,which means that 60% of the data has been predicted correctly by the model.
+
+When I run the z test,we see which independent variables are significant.Marital_Status and Purchase are significant for all the categories since its pvalues are 0.Occupation is significant only for categories 12,13 and 15 as the pvalue is very small for these categories.
+
+## Apriori Algorithm.
+What is Apriori algorithm?
+Apriori algorithm is useful in mining frequent itemsets and relevant association rules.We operate this on a database containing large number of transactions.It has got this name because it uses "prior" knowledge of frequent itemsets.
+There are 3 components in apriori algorithm:
+Support.
+Lift.
+Confidence.
+
+Support:Number of transactions that include antecedent and consequent itemsets.
+Confidence:the % of antecedent transactions that also have the consequent itemset.
+Lift: [confidence / (benchmark confidence)]
+Benchmark Confidence:Transactions with consequent as % of all transactions.
+
+Apriori Algorithm for product category 1:I have run the Apriori algorithm on category 1 and userid.
+
+```{r }
+Blackfriday_arules <- read.transactions("BlackFriday.csv",format = "single",cols = c(1,9),sep =",",rm.duplicates = TRUE)
+summary(Blackfriday_arules)
+
+itemFrequencyPlot(Blackfriday_arules,topN=18,type = "absolute",col = "#FFDEAD",xlab = "Category",ylab = "Frequency(absolute)")
+rules <- apriori(Blackfriday_arules, parameter = list(supp = 0.5, conf = 0.5, target = "rules"))
+#inspect(head(sort(rules, by = "lift")))
+
+rules.tbl <- inspect(tail(rules,20))
+
+
+```
+
+To run this algorithm,I have used read.transactions which converts the two given columns into transactions.
+
+In itemFrequency plot we find that categories 1,5 and 8 has maximum purchase.The graph is right skewed.
+When we actually execute apriori algorithm with support and confidence equal to 0.5 ,in the output we find that for 1st transaction if the user purchase from category 1,5 and 6 then the probability that he also purchases from category 2 is higher.The confidence is 0.80 which shows that 80% of the times users purchase from categories 1,5 and 6 also purchase from category 2.Similarly for 2nd transaction we find that if the user purchases from categories 1,2 and 5 then there is a high probability that he will also purchase from category 6.The confidence is 0.76 which shows that the user who purchase from categories 1,2 and 5 also purchased from category 6 76% of the times.We can give similar explanations for all the other transactions.
+
+Let us see the apriori algorithm for product category 2.
+I have run the Apriori algorithm on category 2 and userid.
+
+
+
+```{r }
+Blackfriday_arules2 <- read.transactions("BlackFriday.csv",format = "single",cols = c(1,10),sep =",",rm.duplicates = TRUE)
+summary(Blackfriday_arules)
+
+itemFrequencyPlot(Blackfriday_arules2,topN=18,type = "absolute",col = "#FFDEAD",xlab = "Categories",ylab = "Frequency(absolute)")
+
+rules2 <- apriori(Blackfriday_arules2, parameter = list(supp = 0.7, conf = 0.3, target = "rules"))
+#inspect(head(sort(rules2, by = "lift")))
+
+rules.tbl2 <- inspect(tail(rules2,20))
+
+
+
+```
+To run this algorithm,I have used read.transactions which converts the two given columns into transactions.
+
+When we execute the apriori algorithm with support equal to 0.7 and confidence equal to 0.3,we find that for 1st transaction if the user purchases from category 14,16 and 2 then there is a high probability that he will purchase from category 8.The value of confidence is 97.5% which means that 97.5% of the times the users who purchase from categories 14,16 and 2 also purchased from category 8.For transaction 2,if he purchases from categories 16,2 and 8 then there is a high probability that he will purchase from category 14.The confidence value is 93% which shows that 93% of the times the users who purchased from categories 16,2 and 8 also purchased from category 14.Similar explanation can be given for all other transactions
+
+
+## Conclusion
+* The maximum purchase was done by the users between age group 26-35
+* On an average Males has done more purchase than females.
+* City Category B has maximum purchase and males from city category C has maximum purchase
+* Product Category 1 and 2 was purchased maximum number of times.
+* Maximum people live in a city not more than a year.
+
+  Conclusions from the analysis 
+
+  * Linear Discriminant Analysis.
+In LDA we find that maximum data is contained in city category B which means that maximum users living in city category B has highest purchase and which also supports our 3rd point in the conclusion above.LD1 contains has 83.71 % of the data.
+
+ * Multinomial Logistic Regression.
+For user 2 the probability that he will purchase from product 2 is 89%.For user 7 the probability that he will purchase from product 1 is 75%.
+
+ * Apriori Algorithm
+ In Product category 1, we find that the confidence that products 2,5,8 and 1 are purchased together is higher.In Product Category 2, we find that the confidence that products 14,2 and 8 are purchased together is higher.
+
+
+
+
+## Suggestions For the Seller.
+
+* He should sell more products in City category B as there is maximum sales.
+* He should keep in stock more items which males purchase.
+* The seller should keep the products which are much appreciated and in demand for the people who are either students or are working professionals.
+* The seller should sell the products from categories 1,2,5 and 8 together.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
